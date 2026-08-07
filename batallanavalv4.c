@@ -18,34 +18,40 @@ Este archivo debe actualizarse cuando se termine un juego. A cada línea del arc
 */
 
 typedef struct  {
-    char nombre[50];
-    int disparos;
+  char nombre[50];
+	char fecha[30]; // "DD/MM/AAAA - HH:MM:SS"
+  int disparos;
 }record;
 
 typedef struct  {
-    int fila;
-    int columna;
+  int fila;
+  int columna;
 }disparo;
 
 typedef struct  {
-    char *tablero;               // Tablero dinámico
-    int n;
-    int barcoF;
-    int barcoC;
-    int opcion;
-    int tiros;
-    int gano;
-    char nombreActual[50];
-    disparo *historial;
-    record ranking;
+  char *tablero; // Tablero dinámico
+  char nombreActual[50];
+  int n;
+  int barcoF;
+  int barcoC;
+  int opcion;
+  int tiros;
+  int gano;
+  disparo *historial;
+  record ranking;
 } EstadoJuego;
 
 void inicializarTablero(EstadoJuego *juego);
 void mostrarTablero(EstadoJuego *juego);
 int realizarDisparo(EstadoJuego *juego, int f, int c);
 void checkeoscan(int *destino, const char *mensaje_error);
+int cargarGanador(EstadoJuego *juego);
+void checkeonombre (char *destino, int tamano);
 
 int main() {
+  time_t tiempoActual;
+  struct tm *infoTiempo;
+
   EstadoJuego mega;
 
   strcpy(mega.ranking.nombre, "Lucho");
@@ -77,20 +83,25 @@ int main() {
 
     if (mega.opcion == 1) {
       printf("Tamano del tablero: ");
-      scanf("%d", &mega.n);
 
+      if (scanf("%d", &mega.n) != 1) {
+        checkeoscan(&mega.n, "Error, si no me dices tu nivel, no te puedo entrenar recluta: ");
+      }
 
       inicializarTablero(&mega);
       printf("Cual es tu nombre muchacho: ");
-      scanf("%s", mega.nombreActual);
+      checkeonombre (mega.nombreActual, 50);
       while (!mega.gano) {
         mostrarTablero(&mega);
         printf("Disparo actual: %d\n", mega.tiros + 1);
         int f_actual, c_actual;
+
         printf("Coordenadas:\nFila: ");
-        scanf("%d", &f_actual);
+        checkeoscan(&f_actual, "Sigue asi recluta y jamas veras el altamar.");
+
         printf("Columna: ");
-        scanf("%d", &c_actual);
+        checkeoscan(&c_actual, "Sigue asi recluta y jamas veras el altamar.");
+
         int res = realizarDisparo(&mega, f_actual, c_actual);
         if (res != -1) {
           mega.tiros++;
@@ -106,9 +117,9 @@ int main() {
       }
       mostrarTablero(&mega);
       if (mega.gano) {
-        printf("\nTreinta anos navegando he visto ese tiro exactamente... una vez. Y era yo. Asi que no te pongas muy comodo, entendiste %s?\nLe diste en %d canonazos.\n", mega.nombreActual, mega.tiros);
+        printf("\nTe felicito %s, ya eres parte de esta tripulacion.\nLe diste en %d canhonazos.\n", mega.nombreActual, mega.tiros);
         if (mega.tiros < mega.ranking.disparos) {
-          printf("\n¡NUEVO RECORD!\nComo quieres ser recordado muchacho?: ");
+          printf("\n¡Y CON UN NUEVO RECORD!");
           scanf("%s", mega.ranking.nombre);
           mega.ranking.disparos = mega.tiros;
         }
@@ -138,7 +149,6 @@ int main() {
 }
 
 void inicializarTablero( EstadoJuego *juego) {
-
   juego->tablero = (char *)malloc(juego->n * (*juego).n * sizeof(char));// jurgo->n == (*juego).n reservar memoria equivalente a n² elementos char
   juego->tiros = 0;
   juego->gano = 0;
@@ -201,9 +211,42 @@ void checkeoscan(int *destino, const char *mensaje_error) {
   }
 }
 
-void checkeonombre (char *destino, int tamano){//tamano es sizeof(mega.nombreActual)
-  a
+void checkeonombre (char *destino, int tamano) {
+  while (1) {
+    printf("Cual es tu nombre muchacho: ");
+    if (fgets(destino, tamano, stdin) != NULL) {
+      destino[strcspn(destino, "\n")] = '\0';// requisito para el \n que incluye fgets en lugar de \0 que indica fin de cadena de texto
+
+      if (strlen(destino) > 0) {
+        break; //el nombre no es nulo, salimos
+      }
+    }
+    printf("No te me hagas el gracioso recluta, dime tu nombre.\n");
+  }
 }
+
+
+int cargarGanador(EstadoJuego *juego) {
+  FILE *archivo = fopen("ranking.bin", "ab");
+  if (archivo == NULL) {
+    printf("Error: No se pudo abrir o crear el archivo 'ranking.bin'.\n");
+    return 1;
+  }
+
+  time_t tiempoActual;
+  struct tm *infoTiempo;
+
+  time(&tiempoActual);
+  infoTiempo = localtime(&tiempoActual);
+  strftime(juego->ranking.fecha, sizeof(juego->ranking.fecha), "%d/%m/%Y - %H:%M:%S", infoTiempo);
+
+  fwrite(&juego->ranking, sizeof(record), 1, archivo);
+  fclose(archivo);
+
+  printf("Lo anote detras del mapa camarada, lo podras ver cuando estemos en altamar, bienvenido.\n");
+  return 0;
+}
+
 
 //quedo hacer el grardado cargado y ranking basicamente todo pero andamos bulletproofeados
 

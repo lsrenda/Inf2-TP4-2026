@@ -36,18 +36,9 @@ int main() {
 	infoTiempo = localtime(&tiempoActual);
 	
 	strftime(nuevoJugador.fecha, sizeof(nuevoJugador.fecha), "%d/%m/%Y - %H:%M:%S", infoTiempo);
-	
-	// Escribir la estructura completa en el archivo usando fwrite
-	// Par�metros: 
-	// 		&nuevoJugador -> Direcci�n de memoria de la estructura.
-	// 		sizeof(Jugador) -> Cu�ntos bytes mide la estructura completa.
-	// 		1 -> Cu�ntas estructuras vamos a escribir en esta operaci�n.
-	// 		archivo -> El puntero al archivo binario abierto.
+
 	fwrite(&nuevoJugador, sizeof(Jugador), 1, archivo);
-	
-	// Cerrar el archivo correctamente
 	fclose(archivo);
-	
 	printf("Registro guardado 'ranking.bin' usando fwrite.\n");
 	return 0;
 }
