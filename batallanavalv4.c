@@ -2,6 +2,17 @@
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
+#include <sys/stat.h>
+
+// carpeta donde se guardan los archivos propios de cada jugador
+#define CARPETA_JUGADORES "players"
+
+#ifdef _WIN32
+#include <direct.h>
+#define CREAR_DIR(dir) _mkdir(dir)
+#else
+#define CREAR_DIR(dir) mkdir(dir, 0777)
+#endif
 
 
 /*
@@ -45,6 +56,7 @@ typedef struct {
 	jugador mejorRecord;
 } EstadoJuego;
 
+void asegurarCarpetaJugadores(void);
 void inicializarTablero(EstadoJuego *juego);
 void mostrarTablero(EstadoJuego *juego);
 void mostrarRanking(EstadoJuego *juego);
@@ -59,6 +71,11 @@ void guardarPartida(EstadoJuego *juego);
 int cargarPartida(EstadoJuego *juego);
 void jugarBucle(EstadoJuego *juego);
 
+
+// crea la carpeta players si todavia no existe, ignora el error si ya esta creada
+void asegurarCarpetaJugadores(void) {
+	CREAR_DIR(CARPETA_JUGADORES);
+}
 
 int main() {
 	EstadoJuego mega;
@@ -385,8 +402,10 @@ void mostrarRanking(EstadoJuego *juego) {
 
 // requisito 4: guarda todos los disparos del jugador, se acumulan entre partidas (no se sobreescriben)
 void guardarHistorialDisparos(EstadoJuego *juego) {
-	char nombreArchivo[100];
-	snprintf(nombreArchivo, sizeof(nombreArchivo), "disparos_%s.txt", juego->nombreActual);
+	asegurarCarpetaJugadores();
+
+	char nombreArchivo[120];
+	snprintf(nombreArchivo, sizeof(nombreArchivo), "%s/disparos_%s.txt", CARPETA_JUGADORES, juego->nombreActual);
 
 	FILE *archivo = fopen(nombreArchivo, "a");
 	if (archivo == NULL) {
@@ -419,8 +438,10 @@ void guardarPartida(EstadoJuego *juego) {
 		return;
 	}
 
-	char nombreArchivo[100];
-	snprintf(nombreArchivo, sizeof(nombreArchivo), "save_%s.bin", juego->nombreActual);
+	asegurarCarpetaJugadores();
+
+	char nombreArchivo[120];
+	snprintf(nombreArchivo, sizeof(nombreArchivo), "%s/save_%s.bin", CARPETA_JUGADORES, juego->nombreActual);
 
 	FILE *archivo = fopen(nombreArchivo, "wb");
 	if (archivo == NULL) {
@@ -450,8 +471,8 @@ int cargarPartida(EstadoJuego *juego) {
 	// primero se pide el nombre para saber que archivo de guardado buscar
 	checkeonombre(juego->nombreActual, 50);
 
-	char nombreArchivo[100];
-	snprintf(nombreArchivo, sizeof(nombreArchivo), "save_%s.bin", juego->nombreActual);
+	char nombreArchivo[120];
+	snprintf(nombreArchivo, sizeof(nombreArchivo), "%s/save_%s.bin", CARPETA_JUGADORES, juego->nombreActual);
 
 	FILE *archivo = fopen(nombreArchivo, "rb");
 	if (archivo == NULL) {
