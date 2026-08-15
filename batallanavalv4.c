@@ -22,6 +22,7 @@ typedef struct {
 	char fecha[30]; // "DD/MM/AAAA - HH:MM:SS"
 	int disparos;
 	time_t timestamp; // Para calcular diferencia de tiempo fácil
+	int existeRecord; // 1 si el struct tiene datos validos, 0 si es un record vacio
 } jugador;
 
 typedef struct {
@@ -39,18 +40,20 @@ typedef struct {
 	int tiros;
 	int gano;
 	disparo *historial;
-	jugador ranking;
+	jugador *ranking; // ranking completo cargado en memoria
+	int cantidadRanking; // cantidad de jugadores en el ranking
 	jugador mejorRecord;
 } EstadoJuego;
 
 void inicializarTablero(EstadoJuego *juego);
 void mostrarTablero(EstadoJuego *juego);
-void mostrarRanking();
+void mostrarRanking(EstadoJuego *juego);
 void checkeoscan(int *destino, const char *mensaje_error);
 void checkeonombre(char *destino, int tamano);
 int realizarDisparo(EstadoJuego *juego, int f, int c);
 int cargarGanador(EstadoJuego *juego);
-void recuperarMejorRecord(jugador *mejor);
+void cargarRanking(EstadoJuego *juego);
+void calcularMejorRecord(EstadoJuego *juego);
 void guardarHistorialDisparos(EstadoJuego *juego);
 void guardarPartida(EstadoJuego *juego);
 int cargarPartida(EstadoJuego *juego);
@@ -61,15 +64,19 @@ int main() {
 	EstadoJuego mega;
 	mega.tablero = NULL;
 	mega.historial = NULL;
+	mega.ranking = NULL;
+	mega.cantidadRanking = 0;
 
 	srand(time(NULL));
 
-	recuperarMejorRecord(&mega.mejorRecord);
+	// requisito 2: el ranking completo se recupera y se guarda en memoria al iniciar
+	cargarRanking(&mega);
+	calcularMejorRecord(&mega);
 
 	do {
 		printf("\n=== TP3 INFORMATICA II ===\n");
 
-		if (mega.mejorRecord.disparos < 9999998) {
+		if (mega.mejorRecord.existeRecord) {
 			time_t ahora = time(NULL);
 			double segundos = difftime(ahora, mega.mejorRecord.timestamp);
 			int dias = (int)(segundos / 86400);
@@ -102,9 +109,17 @@ int main() {
 				checkeoscan(&mega.n, "Error, si no me dices tu nivel, no te puedo entrenar recluta: ");
 			}
 
+			// el tablero no puede tener tamano cero o negativo
+			while (mega.n <= 0) {
+				printf("el tamano tiene que ser mayor a cero: ");
+				checkeoscan(&mega.n, "el tamano tiene que ser mayor a cero: ");
+			}
+
 			inicializarTablero(&mega);
-			checkeonombre(mega.nombreActual, 50);
-			jugarBucle(&mega);
+			if (mega.tablero != NULL) {
+				checkeonombre(mega.nombreActual, 50);
+				jugarBucle(&mega);
+			}
 		}
 		if (mega.opcion == 2) {
 			guardarPartida(&mega); // esto tendria que ser un archivo
@@ -117,12 +132,13 @@ int main() {
 		}
 
 		if (mega.opcion == 4) {
-			mostrarRanking();
+			mostrarRanking(&mega);
 		}
 	} while (mega.opcion != 5);
 
 	if (mega.tablero) free(mega.tablero);
 	if (mega.historial) free(mega.historial);
+	if (mega.ranking) free(mega.ranking); // libera el ranking cargado en memoria
 
 	return 0;
 }
@@ -131,6 +147,32 @@ void jugarBucle(EstadoJuego *juego) {
 	while (!juego->gano) {
 		mostrarTablero(juego);
 		printf("Disparo actual: %d\n", juego->tiros + 1);
+
+		// menu de turno: permite disparar, guardar o cargar entre disparos
+		int accion;
+		printf("1. Disparar\n2. Guardar partida\n3. Cargar partida\nSeleccione: ");
+		if (scanf("%d", &accion) != 1) {
+			checkeoscan(&accion, "opcion invalida, elegi un numero del 1 al 3: ");
+		}
+		while (accion < 1 || accion > 3) {
+			printf("opcion invalida, elegi un numero del 1 al 3: ");
+			if (scanf("%d", &accion) != 1) {
+				checkeoscan(&accion, "opcion invalida, elegi un numero del 1 al 3: ");
+			}
+		}
+
+		if (accion == 2) {
+			guardarPartida(juego);
+			continue; // vuelve a mostrar el tablero sin gastar el turno
+		}
+
+		if (accion == 3) {
+			if (cargarPartida(juego)) {
+				printf("\npartida cargada, retomando el combate...\n");
+			}
+			continue; // el estado pudo haber cambiado por completo, se re-muestra el tablero
+		}
+
 		int f_actual, c_actual;
 
 		printf("Coordenadas:\nFila: ");
@@ -161,7 +203,9 @@ void jugarBucle(EstadoJuego *juego) {
 		}
 		cargarGanador(juego);
 		guardarHistorialDisparos(juego);
-		recuperarMejorRecord(&juego->mejorRecord);
+		// requisito 2: se refresca el ranking en memoria con el nuevo resultado
+		cargarRanking(juego);
+		calcularMejorRecord(juego);
 	}
 	printf("\n--- SECUENCIA DE DISPAROS ---\n");
 	for (int i = 0; i < juego->tiros; i++) {
@@ -176,7 +220,11 @@ void jugarBucle(EstadoJuego *juego) {
 void inicializarTablero(EstadoJuego *juego) {
 	if (juego->tablero) free(juego->tablero);
 	if (juego->historial) free(juego->historial);
-	juego->tablero = (char *)malloc(juego->n * (*juego).n * sizeof(char)); // jurgo->n == (*juego).n reservar memoria equivalente a n² elementos char
+	juego->tablero = (char *)malloc(juego->n * juego->n * sizeof(char)); // reservar memoria equivalente a n² elementos char
+	if (juego->tablero == NULL) {
+		printf("error de memoria al crear el tablero.\n");
+		return;
+	}
 	juego->tiros = 0;
 	juego->gano = 0;
 	juego->historial = NULL; // para que el primer realloc funcione como malloc
@@ -271,34 +319,55 @@ int cargarGanador(EstadoJuego *juego) {
 	return 0;
 }
 
-void recuperarMejorRecord(jugador *mejor) {
-	FILE *archivo = fopen("ranking.txt", "r");
-	mejor->disparos = 9999999;
-	strcpy(mejor->nombre, "Sin Récord");
+// requisito 2: lee ranking.txt entero y arma el arreglo en memoria (reemplaza el ranking previo si existia)
+void cargarRanking(EstadoJuego *juego) {
+	if (juego->ranking) {
+		free(juego->ranking);
+		juego->ranking = NULL;
+	}
+	juego->cantidadRanking = 0;
 
+	FILE *archivo = fopen("ranking.txt", "r");
 	if (archivo == NULL) return;
 
 	jugador temp;
 	long ts;
 	while (fscanf(archivo, "%49[^;];%d;%29[^;];%ld\n", temp.nombre, &temp.disparos, temp.fecha, &ts) == 4) {
 		temp.timestamp = (time_t)ts;
-		if (temp.disparos < mejor->disparos) {
-			*mejor = temp;
+		temp.existeRecord = 1;
+
+		jugador *tmp = (jugador *)realloc(juego->ranking, (juego->cantidadRanking + 1) * sizeof(jugador));
+		if (tmp == NULL) {
+			printf("error de memoria cargando el ranking.\n");
+			break;
 		}
+		juego->ranking = tmp;
+		juego->ranking[juego->cantidadRanking] = temp;
+		juego->cantidadRanking++;
 	}
 	fclose(archivo);
 }
 
-void mostrarRanking() {
-	FILE *archivo = fopen("ranking.txt", "r");
-	if (archivo == NULL) {
+// recorre el ranking ya cargado en memoria y determina el mejor puntaje
+void calcularMejorRecord(EstadoJuego *juego) {
+	juego->mejorRecord.existeRecord = 0;
+	strcpy(juego->mejorRecord.nombre, "Sin Récord");
+	juego->mejorRecord.disparos = 0;
+
+	for (int i = 0; i < juego->cantidadRanking; i++) {
+		if (!juego->mejorRecord.existeRecord || juego->ranking[i].disparos < juego->mejorRecord.disparos) {
+			juego->mejorRecord = juego->ranking[i];
+			juego->mejorRecord.existeRecord = 1;
+		}
+	}
+}
+
+// muestra el ranking desde memoria, no vuelve a leer el archivo
+void mostrarRanking(EstadoJuego *juego) {
+	if (juego->cantidadRanking == 0) {
 		printf("\nAun no hay registros de ranking guardados en altamar.\n");
 		return;
 	}
-
-	jugador reg;
-	long ts;
-	int contador = 1;
 
 	printf("\n=======================================================\n");
 	printf("                RANKING DE CADETES                     \n");
@@ -306,26 +375,32 @@ void mostrarRanking() {
 	printf("%-5s | %-20s | %-8s | %-20s\n", "Nº", "Jugador", "Disparos", "Fecha y Hora");
 	printf("-------------------------------------------------------\n");
 
-	while (fscanf(archivo, "%49[^;];%d;%29[^;];%ld\n", reg.nombre, &reg.disparos, reg.fecha, &ts) == 4) {
-		printf("%-5d | %-20s | %-8d | %-20s\n", contador++, reg.nombre, reg.disparos, reg.fecha);
+	for (int i = 0; i < juego->cantidadRanking; i++) {
+		printf("%-5d | %-20s | %-8d | %-20s\n", i + 1, juego->ranking[i].nombre, juego->ranking[i].disparos, juego->ranking[i].fecha);
 	}
 
 	printf("=======================================================\n");
-
-	fclose(archivo);
 }
 
 
-// Requisito 4: Archivo de historial por jugador
+// requisito 4: guarda todos los disparos del jugador, se acumulan entre partidas (no se sobreescriben)
 void guardarHistorialDisparos(EstadoJuego *juego) {
 	char nombreArchivo[100];
 	snprintf(nombreArchivo, sizeof(nombreArchivo), "disparos_%s.txt", juego->nombreActual);
 
-	FILE *archivo = fopen(nombreArchivo, "w");
+	FILE *archivo = fopen(nombreArchivo, "a");
 	if (archivo == NULL) {
 		printf("Error guardando el historial de disparos.\n");
 		return;
 	}
+
+	time_t ahora = time(NULL);
+	struct tm *infoTiempo = localtime(&ahora);
+	char fechaFormat[30];
+	strftime(fechaFormat, sizeof(fechaFormat), "%d/%m/%Y - %H:%M:%S", infoTiempo);
+
+	// marca el inicio de la partida, no forma parte del formato fila,columna,resultado
+	fprintf(archivo, "# partida del %s\n", fechaFormat);
 
 	for (int i = 0; i < juego->tiros; i++) {
 		int esHundido = (juego->historial[i].fila == juego->barcoF && juego->historial[i].columna == juego->barcoC);
@@ -333,17 +408,21 @@ void guardarHistorialDisparos(EstadoJuego *juego) {
 	}
 
 	fclose(archivo);
-	printf("Historial detallado guardado en: %s\n", nombreArchivo);
+	printf("Historial actualizado en: %s\n", nombreArchivo);
 }
 
 // Opciones 2 y 3: Guardar y Cargar Partida
+// cada jugador tiene su propio archivo de guardado, identificado por su nombre
 void guardarPartida(EstadoJuego *juego) {
 	if (juego->tablero == NULL) {
 		printf("No hay ninguna partida activa en curso para guardar.\n");
 		return;
 	}
 
-	FILE *archivo = fopen("save.bin", "wb");
+	char nombreArchivo[100];
+	snprintf(nombreArchivo, sizeof(nombreArchivo), "save_%s.bin", juego->nombreActual);
+
+	FILE *archivo = fopen(nombreArchivo, "wb");
 	if (archivo == NULL) {
 		printf("Error al guardar la partida.\n");
 		return;
@@ -364,35 +443,74 @@ void guardarPartida(EstadoJuego *juego) {
 	}
 
 	fclose(archivo);
-	printf("\nPartida guardada exitosamente en 'save.bin'.\n");
+	printf("\nPartida guardada exitosamente en '%s'.\n", nombreArchivo);
 }
 
 int cargarPartida(EstadoJuego *juego) {
-	FILE *archivo = fopen("save.bin", "rb");
+	// primero se pide el nombre para saber que archivo de guardado buscar
+	checkeonombre(juego->nombreActual, 50);
+
+	char nombreArchivo[100];
+	snprintf(nombreArchivo, sizeof(nombreArchivo), "save_%s.bin", juego->nombreActual);
+
+	FILE *archivo = fopen(nombreArchivo, "rb");
 	if (archivo == NULL) {
-		printf("\nNo se encontro ninguna partida guardada ('save.bin').\n");
+		printf("\nNo se encontro ninguna partida guardada para %s.\n", juego->nombreActual);
 		return 0;
 	}
 
 	// Liberar memoria si había algo cargado previamente
 	if (juego->tablero) free(juego->tablero);
 	if (juego->historial) free(juego->historial);
+	juego->tablero = NULL;
+	juego->historial = NULL;
 
-	// 1. Leer primitivas
-	fread(&juego->n, sizeof(int), 1, archivo);
-	fread(&juego->barcoF, sizeof(int), 1, archivo);
-	fread(&juego->barcoC, sizeof(int), 1, archivo);
-	fread(&juego->tiros, sizeof(int), 1, archivo);
-	fread(&juego->gano, sizeof(int), 1, archivo);
-	fread(juego->nombreActual, sizeof(char), 50, archivo);
+	// 1. leer primitivas, validando que cada lectura haya sido completa
+	if (fread(&juego->n, sizeof(int), 1, archivo) != 1 ||
+		fread(&juego->barcoF, sizeof(int), 1, archivo) != 1 ||
+		fread(&juego->barcoC, sizeof(int), 1, archivo) != 1 ||
+		fread(&juego->tiros, sizeof(int), 1, archivo) != 1 ||
+		fread(&juego->gano, sizeof(int), 1, archivo) != 1 ||
+		fread(juego->nombreActual, sizeof(char), 50, archivo) != 50) {
+		printf("\nerror: el archivo de partida guardada esta corrupto o incompleto.\n");
+		fclose(archivo);
+		return 0;
+	}
 
-	// 2. Asignar memoria y leer arreglos dinámicos
+	// 2. asignar memoria y leer el tablero, validando la reserva y la lectura
 	juego->tablero = (char *)malloc(juego->n * juego->n * sizeof(char));
-	fread(juego->tablero, sizeof(char), juego->n * juego->n, archivo);
+	if (juego->tablero == NULL) {
+		printf("\nerror de memoria al cargar el tablero.\n");
+		fclose(archivo);
+		return 0;
+	}
+	if (fread(juego->tablero, sizeof(char), juego->n * juego->n, archivo) != (size_t)(juego->n * juego->n)) {
+		printf("\nerror: no se pudo leer el tablero guardado.\n");
+		free(juego->tablero);
+		juego->tablero = NULL;
+		fclose(archivo);
+		return 0;
+	}
 
+	// 3. asignar memoria y leer el historial de disparos, misma validacion
 	if (juego->tiros > 0) {
 		juego->historial = (disparo *)malloc(juego->tiros * sizeof(disparo));
-		fread(juego->historial, sizeof(disparo), juego->tiros, archivo);
+		if (juego->historial == NULL) {
+			printf("\nerror de memoria al cargar el historial.\n");
+			free(juego->tablero);
+			juego->tablero = NULL;
+			fclose(archivo);
+			return 0;
+		}
+		if (fread(juego->historial, sizeof(disparo), juego->tiros, archivo) != (size_t)juego->tiros) {
+			printf("\nerror: no se pudo leer el historial guardado.\n");
+			free(juego->tablero);
+			free(juego->historial);
+			juego->tablero = NULL;
+			juego->historial = NULL;
+			fclose(archivo);
+			return 0;
+		}
 	} else {
 		juego->historial = NULL;
 	}
